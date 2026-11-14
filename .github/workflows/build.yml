@@ -1,0 +1,45 @@
+name: Build APK
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Build
+        run: gradle assembleDebug --stacktrace --no-daemon
+
+      - name: Rename APK
+        run: cp app/build/outputs/apk/debug/app-debug.apk TJR-Clipper.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: TJR-Clipper
+          path: TJR-Clipper.apk
+
+      - name: Publish to Releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete latest --yes --cleanup-tag || true
+          gh release create latest TJR-Clipper.apk \
+            --title "TJR Clipper (terbaru)" \
+            --notes "Unduh TJR-Clipper.apk di bawah lalu pasang di HP Android. Build dari commit ${GITHUB_SHA::7}." \
+            --latest
