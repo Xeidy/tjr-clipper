@@ -113,6 +113,24 @@ How to pick clips:
 
 The transcript comes from automatic speech recognition, so it has no punctuation and may contain small errors. Each line starts with its time in seconds."""
 
+    /**
+     * Membaca daftar clip dari jawaban Claude. Kalau jawabannya terpotong,
+     * clip yang sudah lengkap tetap dipakai.
+     */
+    fun parseClips(reply: String): JSONArray {
+        val a = reply.indexOf('{')
+        if (a < 0) throw IOException("Claude tidak mengembalikan daftar clip. Coba lagi.")
+        val text = reply.substring(a)
+        runCatching { ClaudeClient.extractJson(text).optJSONArray("clips") }.getOrNull()?.let { return it }
+        var pos = text.lastIndexOf('}')
+        while (pos > 0) {
+            val arr = runCatching { org.json.JSONObject(text.substring(0, pos + 1) + "]}").optJSONArray("clips") }.getOrNull()
+            if (arr != null && arr.length() > 0) return arr
+            pos = text.lastIndexOf('}', pos - 1)
+        }
+        throw IOException("Jawaban Claude tidak bisa dibaca. Coba tekan Cari momen viral lagi.")
+    }
+
     fun find(
         client: ClaudeClient,
         words: List<Word>,
@@ -126,7 +144,7 @@ The transcript comes from automatic speech recognition, so it has no punctuation
             append("Transcript:\n<transcript>\n")
             append(buildTranscript(words))
             append("</transcript>\n\n")
-            append("Find the best 5 to 10 clips, each between $minLen and $maxLen seconds long. ")
+            append("Find the best 5 to 8 clips, each between $minLen and $maxLen seconds long. ")
             append("Rank them from most to least viral.\n")
             if (extra.isNotBlank()) append("Extra instructions from the clipper: ").append(extra.trim()).append('\n')
             append(
@@ -136,9 +154,8 @@ Reply with only this JSON and nothing else:
 """.trimIndent()
             )
         }
-        val reply = client.send(SYSTEM, JSONArray().put(ClaudeClient.textBlock(prompt)), maxTokens = 4096)
-        val arr = ClaudeClient.extractJson(reply).optJSONArray("clips")
-            ?: throw IOException("Claude tidak mengembalikan daftar clip. Coba lagi.")
+        val reply = client.send(SYSTEM, JSONArray().put(ClaudeClient.textBlock(prompt)), maxTokens = 12000)
+        val arr = parseClips(reply)
 
         val result = ArrayList<ClipIdea>()
         for (i in 0 until arr.length()) {
